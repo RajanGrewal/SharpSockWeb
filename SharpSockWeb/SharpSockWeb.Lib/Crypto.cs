@@ -11,17 +11,16 @@ namespace SharpSockWeb.Lib
         {
             using (var hasher = SHA1.Create())
             {
-                var rawKey = string.Concat(clientKey,ServerKey );
+                var rawKey = string.Concat(clientKey, ServerKey);
                 var txtBuf = Encoding.UTF8.GetBytes(rawKey);
                 var encBuf = hasher.ComputeHash(txtBuf);
                 return Convert.ToBase64String(encBuf);
             }
         }
-        public static void DecryptPayload(byte[] payLoad,byte[] maskKey)
+        public static void DecryptPayload(byte[] payLoad, byte[] maskKey)
         {
-            if(payLoad.Length > 0)
-                for (int i = 0; i < payLoad.Length; i++)
-                    payLoad[i] ^= maskKey[i % 4];
+            for (int i = 0; i < payLoad.Length; i++)
+                payLoad[i] ^= maskKey[i % 4];
         }
     }
 }

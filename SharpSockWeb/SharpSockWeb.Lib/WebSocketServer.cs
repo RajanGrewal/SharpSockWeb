@@ -13,6 +13,7 @@ namespace SharpSockWeb.Lib
     public class WebSocketServer : IDisposable
     {
         private readonly TcpListener m_listener;
+        //private readonly List<WebSocket> m_pending;
         private readonly List<WebSocket> m_clients;
         private readonly object m_lock;
         private readonly int m_port;
@@ -20,12 +21,15 @@ namespace SharpSockWeb.Lib
         private bool m_active;
         private bool m_disposed;
 
+        public bool Active => m_active;
+        public string Origin => m_origin;
+
         public event Action<WebSocket> OnClientConnected;
-        public event Action<WebSocket,byte[]> OnClientDataReceived;
-        public event Action<WebSocket,string> OnClientStringReceived;
+        public event Action<WebSocket, byte[]> OnClientDataReceived;
+        public event Action<WebSocket, string> OnClientStringReceived;
         public event Action<WebSocket> OnClientDisconnected;
 
-        public WebSocketServer(IPAddress localAddr,int port, string origin)
+        public WebSocketServer(IPAddress localAddr, int port, string origin)
         {
             m_listener = new TcpListener(localAddr, port);
             m_clients = new List<WebSocket>();
@@ -37,9 +41,9 @@ namespace SharpSockWeb.Lib
 
         public void Start()
         {
-          ThrowIfDisposed();  
+            ThrowIfDisposed();
 
-           if(m_active)
+            if (m_active)
                 throw new InvalidOperationException("Server already active");
 
             m_active = true;
@@ -60,7 +64,7 @@ namespace SharpSockWeb.Lib
 
         private void BeginAccept()
         {
-            if(m_active && !m_disposed)
+            if (m_active && !m_disposed)
                 m_listener.BeginAcceptTcpClient(EndAccept, null);
         }
         private void EndAccept(IAsyncResult iar)
@@ -76,32 +80,37 @@ namespace SharpSockWeb.Lib
         private async void ClientLoop(object state)
         {
             var tcp = state as TcpClient;
-            var sock = new WebSocket(this,tcp);
-            
+            var sock = new WebSocket(this, tcp);
+
             Debug.Assert(tcp != null, "Bad thread state object");
 
-            lock (m_lock)
+            try
             {
-                m_clients.Add(sock);
+                bool httpSuccess = await sock.ReadHttpHeader();
+
+                if(!httpSuccess)
+                    return;
+
+                while (tcp.Connected)
+                {
+                    if (sock.State == SocketState.Closed)
+                        break;
+
+                    var frame = new Frame();
+
+                    await sock.ReadFrameHeader(frame);
+                    await sock.ReadExtLen(frame);
+                    await sock.ReadMaskKey(frame);
+                    await sock.ReadPayload(frame);
+                }
             }
-            
-
-            while (tcp.Connected)
+            catch (Exception e)
             {
-                if (sock.State == SocketState.Closed)
-                    break;
-
-                var frame = new Frame();
-                await sock.ReadHttpHeader();
-                await sock.ReadFrameHeader(frame);
-                await sock.ReadExtLen(frame);
-                await sock.ReadMaskKey(frame);
-                await sock.ReadPayload(frame);
+                Debug.Fail(e.ToString());
             }
-
-            lock (m_lock)
+            finally
             {
-                m_clients.Remove(sock);
+            //
             }
         }
 
