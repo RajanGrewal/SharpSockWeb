@@ -15,6 +15,7 @@ namespace SharpSockWeb.Server
                 server.OnClientConnected += (conSock) =>
                 {
                     Logger.Write(LogLevel.Connection, "{0} connected",conSock.RemoteEndPoint);
+                    Task.Run(conSock.SendPingAsnyc);
                 };
 
                 server.OnClientStringReceived += (strSock, strMessage) =>
@@ -24,8 +25,9 @@ namespace SharpSockWeb.Server
                     Task.Factory.StartNew(async () =>
                     {
                         await Task.Delay(1000);
-                        await strSock.SendString(strMessage);
+                        await strSock.SendStringAsync(strMessage);
                     });
+
                 };
 
                 server.OnClientDisconnected += (disSock) =>

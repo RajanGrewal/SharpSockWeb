@@ -19,8 +19,9 @@ namespace SharpSockWeb.Lib
         }
         public static void DecryptPayload(byte[] payLoad, byte[] maskKey)
         {
-            for (int i = 0; i < payLoad.Length; i++)
-                payLoad[i] ^= maskKey[i % 4];
+            if (payLoad.Length > 0 && maskKey.Length == 4)
+                for (int i = 0; i < payLoad.Length; i++)
+                    payLoad[i] ^= maskKey[i % 4];
         }
     }
 }

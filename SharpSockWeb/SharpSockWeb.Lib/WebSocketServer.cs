@@ -1,11 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace SharpSockWeb.Lib
@@ -13,7 +9,6 @@ namespace SharpSockWeb.Lib
     public class WebSocketServer : IDisposable
     {
         private readonly TcpListener m_listener;
-        //private readonly List<WebSocket> m_pending;
         private readonly List<WebSocket> m_clients;
         private readonly object m_lock;
         private readonly int m_port;
@@ -23,6 +18,7 @@ namespace SharpSockWeb.Lib
 
         public bool Active => m_active;
         public string Origin => m_origin;
+        public int Port => m_port;
 
         public event Action<WebSocket> OnClientConnected;
         public event Action<WebSocket, byte[]> OnClientDataReceived;
@@ -39,6 +35,7 @@ namespace SharpSockWeb.Lib
             m_active = false;
         }
 
+        //Init methods
         public void Start()
         {
             ThrowIfDisposed();
@@ -50,6 +47,7 @@ namespace SharpSockWeb.Lib
 
             m_listener.Start();
             BeginAccept();
+            Task.Factory.StartNew(WatchTask);
         }
         public void Stop()
         {
@@ -72,23 +70,28 @@ namespace SharpSockWeb.Lib
             if (m_active)
             {
                 var client = m_listener.EndAcceptTcpClient(iar);
-                Task.Factory.StartNew(ClientLoop, client);
+                Task.Factory.StartNew(ClientTask, client);
                 BeginAccept();
             }
         }
 
-        private async void ClientLoop(object state)
+        //Async Loops
+        private async void ClientTask(object state)
         {
             var tcp = state as TcpClient;
             var sock = new WebSocket(this, tcp);
 
-            Debug.Assert(tcp != null, "Bad thread state object");
+            if (tcp == null)
+                throw new InvalidOperationException("Bad thread state");
+
+            lock (m_lock)
+                m_clients.Add(sock);
 
             try
             {
                 bool httpSuccess = await sock.ReadHttpHeader();
 
-                if(!httpSuccess)
+                if (!httpSuccess)
                     return;
 
                 while (tcp.Connected)
@@ -104,13 +107,53 @@ namespace SharpSockWeb.Lib
                     await sock.ReadPayload(frame);
                 }
             }
+#if DEBUG
             catch (Exception e)
             {
-                Debug.Fail(e.ToString());
+
+                throw;
+
             }
+#endif
             finally
             {
-            //
+                sock.ForceClose();
+
+                lock (m_lock)
+                    m_clients.Remove(sock);
+            }
+        }
+        private async void WatchTask()
+        {
+            while (m_active)
+            {
+                await Task.Delay(15 * 1000); //15 Seconds
+
+                WebSocket[] clients;
+
+                lock (m_lock)
+                    clients = m_clients.ToArray();
+
+                foreach (var sock in clients)
+                {
+                    if (sock.State == SocketState.Connecting)
+                    {
+                        if ((DateTime.Now - sock.CreateTime).Seconds >= 10)
+                        {
+                            //Socket did not finish handshake in 10 seconds
+                            sock.ForceClose();
+                        }
+                    }
+                    else if (sock.State == SocketState.Open)
+                    {
+                        if ((DateTime.Now - sock.PongPingTime).Seconds >= 30)
+                        {
+                            //Send ping after 30 seconds
+                            await sock.SendPingAsnyc();
+                        }
+                    }
+                }
+
             }
         }
 
@@ -120,6 +163,14 @@ namespace SharpSockWeb.Lib
         internal void ClientData(WebSocket x, byte[] b) => OnClientDataReceived?.Invoke(x, b);
         internal void ClientDisconnected(WebSocket x) => OnClientDisconnected?.Invoke(x);
 
+        public IEnumerable<WebSocket> GetClients()
+        {
+            lock (m_lock)
+                foreach (var sock in m_clients)
+                    if (sock.State == SocketState.Open)
+                        yield return sock;
+        }
+
         private void ThrowIfDisposed()
         {
             if (m_disposed)
@@ -127,16 +178,16 @@ namespace SharpSockWeb.Lib
         }
         public void Dispose()
         {
-            if (!m_disposed)
-            {
-                m_disposed = true;
-                GC.SuppressFinalize(this);
+            if (m_disposed)
+                return;
 
-                if (m_active)
-                    m_listener.Stop();
+            m_disposed = true;
+            GC.SuppressFinalize(this);
 
-                m_active = false;
-            }
+            if (m_active)
+                m_listener.Stop();
+
+            m_active = false;
         }
     }
 }

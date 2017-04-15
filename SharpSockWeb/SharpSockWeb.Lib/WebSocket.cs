@@ -12,31 +12,35 @@ namespace SharpSockWeb.Lib
     {
         private readonly WebSocketServer m_parent;
         private readonly TcpClient m_client;
-        private readonly string m_endPoint;
         private readonly NetworkStream m_stream;
+        private readonly string m_endPoint;
         private SocketState m_state;
         private DateTime m_createTime;
+        private DateTime m_pingPongTime;
         private bool m_requestClose;
 
         public string RemoteEndPoint => m_endPoint;
         public SocketState State => m_state;
         public DateTime CreateTime => m_createTime;
+        public DateTime PongPingTime => m_pingPongTime;
 
         internal WebSocket(WebSocketServer parent, TcpClient client)
         {
             m_parent = parent;
             m_client = client;
-            m_endPoint = SetSockOpt(client);
             m_stream = client.GetStream();
+            m_endPoint = SetSockOpt(client);
+
             m_state = SocketState.Connecting;
             m_createTime = DateTime.Now;
+            m_pingPongTime = DateTime.Now;
             m_requestClose = false;
         }
 
         private async Task<byte[]> ReadBytesAsync(ulong readLength)
         {
             if (readLength == 0)
-                throw new ArgumentOutOfRangeException(nameof(readLength));
+                return new byte[0];
 
             int idx = 0;
             int len = (int)readLength;
@@ -49,7 +53,6 @@ namespace SharpSockWeb.Lib
 
             return buffer;
         }
-
         private async Task<string> ReadLineAsync()
         {
             var sb = new StringBuilder();
@@ -158,6 +161,9 @@ namespace SharpSockWeb.Lib
             frame.Mask = (header2 & 0x80) == 0x80;
             frame.PayloadLen = (byte)(header2 & 0x7f);
 
+            //Clients must always have Mask set to true
+            //But for this server we will not check for it
+
             if (!Enum.IsDefined(typeof(OpCode), frame.OpCode))
                 throw new InvalidDataException("OpCode is not valid");
 
@@ -181,19 +187,11 @@ namespace SharpSockWeb.Lib
         internal async Task ReadExtLen(Frame frame)
         {
             ulong len = frame.ExtLen;
-
-            if (len == 0)
-                return;
-
             frame.ExtLenBytes = await ReadBytesAsync(len);
         }
         internal async Task ReadMaskKey(Frame frame)
         {
-            ulong len = (ulong)(frame.Mask ? 4 : 0);
-
-            if (len == 0)
-                return;
-
+            ulong len = frame.Mask ? Constant.MaskKeySize : 0;
             frame.MaskKey = await ReadBytesAsync(len);
         }
         internal async Task ReadPayload(Frame frame)
@@ -203,15 +201,10 @@ namespace SharpSockWeb.Lib
             if (len > Constant.MaxFrameSize)
                 throw new InvalidDataException("Payload length exceeds max frame length");
 
-            byte[] payLoad = null;
+            var payLoad = await ReadBytesAsync(len);
 
-            //if (len > 0)
-            {
-                payLoad = await ReadBytesAsync(len);
-
-                if (frame.Mask)
-                    Crypto.DecryptPayload(payLoad, frame.MaskKey);
-            }
+            if (frame.Mask)
+                Crypto.DecryptPayload(payLoad, frame.MaskKey);
 
             switch (frame.OpCode)
             {
@@ -228,20 +221,28 @@ namespace SharpSockWeb.Lib
                     ForceClose();
                     break;
                 case OpCode.Ping:
+                    await SendPongAsync(payLoad);
                     break;
                 case OpCode.Pong:
+                    m_pingPongTime = DateTime.Now;
                     break;
                 case OpCode.Cont:
                     throw new InvalidDataException("No support for fragmented messages yet");
             }
         }
 
-        public void ForceClose()
+        public async Task SendStringAsync(string message)
         {
-            m_state = SocketState.Closed;
-            m_client.Close();
-            m_stream.Close();
-            m_parent.ClientDisconnected(this);
+            var buffer = Encoding.UTF8.GetBytes(message);
+            await SendFrameAsync(OpCode.Text, buffer);
+        }
+        public async Task SendDataAsync(byte[] buffer)
+        {
+            await SendFrameAsync(OpCode.Binary, buffer);
+        }
+        public async Task SendPingAsnyc()
+        {
+            await SendFrameAsync(OpCode.Ping, new byte[0]);
         }
         public async Task SendCloseAsync()
         {
@@ -249,30 +250,22 @@ namespace SharpSockWeb.Lib
             m_requestClose = true;
             await SendCloseAsync(payLoad);
         }
+
         private async Task SendCloseAsync(byte[] payLoad)
         {
-            m_state = SocketState.Closing;
             await SendFrameAsync(OpCode.Close, payLoad);
+            m_state = SocketState.Closing;
         }
-
-        public async Task SendString(string message)
+        private async Task SendPongAsync(byte[] payLoad)
         {
-            var buffer = Encoding.UTF8.GetBytes(message);
-            await SendFrameAsync(OpCode.Text, buffer);
+            await SendFrameAsync(OpCode.Pong, payLoad);
         }
-        public async Task SendData(byte[] buffer)
-        {
-            await SendFrameAsync(OpCode.Binary, buffer);
-        }
-
         private async Task SendFrameAsync(OpCode opCode, byte[] payLoadData)
         {
+            if (payLoadData == null)
+                throw new ArgumentNullException(nameof(payLoadData));
+
             int payLoadLen = payLoadData.Length;
-
-            //TODO: Confirm zero length payloads are invalid
-            if (payLoadLen == 0)
-                throw new ArgumentOutOfRangeException(nameof(payLoadData), "Zero length payload");
-
             int finLen = 2 + payLoadLen;
 
             byte[] extData = null;
@@ -296,8 +289,8 @@ namespace SharpSockWeb.Lib
                 Buffer.BlockCopy(extData, 0, finData, 2, extLen);
             }
 
-            Buffer.BlockCopy(payLoadData, 0, finData, 2 + extLen, payLoadLen);
-
+            if (payLoadLen > 0)
+                Buffer.BlockCopy(payLoadData, 0, finData, 2 + extLen, payLoadLen);
 
             if (payLoadLen > 125) //Fix payload len
                 payLoadLen = payLoadData.Length > ushort.MaxValue ? 127 : 126;
@@ -323,7 +316,23 @@ namespace SharpSockWeb.Lib
         }
         private async Task SendRawAsync(byte[] buffer)
         {
-            await m_stream.WriteAsync(buffer, 0, buffer.Length);
+            if (m_state != SocketState.Closing && m_state != SocketState.Closed)
+                await m_stream.WriteAsync(buffer, 0, buffer.Length);
+        }
+
+        public void ForceClose()
+        {
+            if (m_state == SocketState.Closed)
+                return;
+
+            var oldState = m_state;
+
+            m_state = SocketState.Closed;
+            m_client.Close();
+            m_stream.Close();
+            
+            if(oldState == SocketState.Open || oldState == SocketState.Closing)
+                m_parent.ClientDisconnected(this);
         }
 
         private static string SetSockOpt(TcpClient client)

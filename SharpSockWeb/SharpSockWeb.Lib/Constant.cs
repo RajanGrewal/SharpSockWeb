@@ -5,6 +5,7 @@
         public const int WebSocketVersion = 13; //RFC 6055
 
         public const ulong MaxFrameSize = 1024 * 1000 * 2; //2 Megabytes
+        public const ulong MaskKeySize = 4;
 
         public const string CloseMessage = "Server requested disconnect";
 
