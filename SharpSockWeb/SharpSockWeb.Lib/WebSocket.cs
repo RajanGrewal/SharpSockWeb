@@ -16,6 +16,7 @@ namespace SharpSockWeb.Lib
         private readonly NetworkStream m_stream;
         private SocketState m_state;
         private DateTime m_createTime;
+        private bool m_requestClose;
 
         public string RemoteEndPoint => m_endPoint;
         public SocketState State => m_state;
@@ -29,6 +30,7 @@ namespace SharpSockWeb.Lib
             m_stream = client.GetStream();
             m_state = SocketState.Connecting;
             m_createTime = DateTime.Now;
+            m_requestClose = false;
         }
 
         private async Task<byte[]> ReadBytesAsync(ulong readLength)
@@ -89,7 +91,7 @@ namespace SharpSockWeb.Lib
                 if (Regex.IsMatch(line, Constant.RequestHeaderPattern))
                 {
                     //Always valid - confirmed by regex
-                    var arr = line.Split(new[] {": "}, 2, StringSplitOptions.None);
+                    var arr = line.Split(new[] { ": " }, 2, StringSplitOptions.None);
 
                     var key = arr[0];
                     var val = arr[1];
@@ -127,7 +129,7 @@ namespace SharpSockWeb.Lib
                 }
 
                 var answer = Crypto.GenerateAccept(strKey);
-                var respHeader = string.Format(Constant.Handshake, answer);
+                var respHeader = string.Format(Constant.HttpHandshake, answer);
 
                 await SendRawAsync(respHeader);
 
@@ -138,7 +140,7 @@ namespace SharpSockWeb.Lib
             }
 
             die:
-            await SendRawAsync(Constant.BadRequest);
+            await SendRawAsync(Constant.HttpBadRequest);
             ForceClose();
             return false;
         }
@@ -221,6 +223,9 @@ namespace SharpSockWeb.Lib
                     m_parent.ClientData(this, payLoad);
                     break;
                 case OpCode.Close:
+                    if (!m_requestClose)
+                        await SendCloseAsync(payLoad); //Echo the payload
+                    ForceClose();
                     break;
                 case OpCode.Ping:
                     break;
@@ -236,10 +241,18 @@ namespace SharpSockWeb.Lib
             m_state = SocketState.Closed;
             m_client.Close();
             m_stream.Close();
+            m_parent.ClientDisconnected(this);
         }
-        public void SendClose()
+        public async Task SendCloseAsync()
         {
-
+            var payLoad = Encoding.UTF8.GetBytes(Constant.CloseMessage);
+            m_requestClose = true;
+            await SendCloseAsync(payLoad);
+        }
+        private async Task SendCloseAsync(byte[] payLoad)
+        {
+            m_state = SocketState.Closing;
+            await SendFrameAsync(OpCode.Close, payLoad);
         }
 
         public async Task SendString(string message)
@@ -255,6 +268,11 @@ namespace SharpSockWeb.Lib
         private async Task SendFrameAsync(OpCode opCode, byte[] payLoadData)
         {
             int payLoadLen = payLoadData.Length;
+
+            //TODO: Confirm zero length payloads are invalid
+            if (payLoadLen == 0)
+                throw new ArgumentOutOfRangeException(nameof(payLoadData), "Zero length payload");
+
             int finLen = 2 + payLoadLen;
 
             byte[] extData = null;
@@ -280,17 +298,16 @@ namespace SharpSockWeb.Lib
 
             Buffer.BlockCopy(payLoadData, 0, finData, 2 + extLen, payLoadLen);
 
-            
+
             if (payLoadLen > 125) //Fix payload len
                 payLoadLen = payLoadData.Length > ushort.MaxValue ? 127 : 126;
-            
 
             byte header1 = 0x80; //Fin = true
             header1 |= (byte)((int)opCode & 0x0f);
             //header1 |= 0x40; //Rsv1 = true;
             //header1 |= 0x20; //Rsv2 = true;
             //header1 |= 0x10; //Rsv3 = true;
-            
+
             byte header2 = (byte)(payLoadLen & 0x7f);
             //header2 |= 0x80; //Mask = true;
 

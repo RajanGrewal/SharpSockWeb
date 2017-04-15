@@ -6,6 +6,8 @@
 
         public const ulong MaxFrameSize = 1024 * 1000 * 2; //2 Megabytes
 
+        public const string CloseMessage = "Server requested disconnect";
+
         public const string RequestLinePattern = @"^GET.*HTTP\/1\.1$";
         public const string RequestHeaderPattern = @"^.*: .*$";
         
@@ -15,10 +17,10 @@
 
         public const string OriginHeader = "Origin";
 
-        public const string BadRequest = "HTTP/1.1 400 Bad Request";
-        public const string NotImplemented = "HTTP/1.1 501 Not Implemented";
-
-        public const string Handshake =
+        public const string HttpBadRequest = "HTTP/1.1 400 Bad Request";
+        public const string HttpNotImplemented = "HTTP/1.1 501 Not Implemented";
+        
+        public const string HttpHandshake =
             "HTTP/1.1 101 Switching Protocols\r\n" +
             "Upgrade: websocket\r\n" +
             "Connection: Upgrade\r\n" +
