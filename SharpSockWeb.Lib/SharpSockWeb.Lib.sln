@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 14
+VisualStudioVersion = 14.0.25420.1
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SharpSockWeb.Lib", "SharpSockWeb.Lib\SharpSockWeb.Lib.csproj", "{906B4728-9695-4986-B1F9-C763D13EE2C2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SharpSockWeb.Server", "SharpSockWeb.Server\SharpSockWeb.Server.csproj", "{BAB18421-5A41-4AEA-BC33-0C6B1B2E92C5}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{906B4728-9695-4986-B1F9-C763D13EE2C2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{906B4728-9695-4986-B1F9-C763D13EE2C2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{906B4728-9695-4986-B1F9-C763D13EE2C2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{906B4728-9695-4986-B1F9-C763D13EE2C2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BAB18421-5A41-4AEA-BC33-0C6B1B2E92C5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BAB18421-5A41-4AEA-BC33-0C6B1B2E92C5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BAB18421-5A41-4AEA-BC33-0C6B1B2E92C5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BAB18421-5A41-4AEA-BC33-0C6B1B2E92C5}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
