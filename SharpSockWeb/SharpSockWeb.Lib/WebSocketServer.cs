@@ -215,12 +215,11 @@ namespace SharpSockWeb.Lib
                 return;
 
             m_disposed = true;
+            m_active = false;
             GC.SuppressFinalize(this);
 
             if (m_active)
                 m_listener.Stop();
-
-            m_active = false;
-        }
+         }
     }
 }
