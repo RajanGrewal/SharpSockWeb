@@ -36,6 +36,8 @@ namespace SharpSockWeb.Server
                 };
 
                 server.Start();
+                Logger.Write(LogLevel.Server, "Listening on port {0} @ origin {1}",server.Port,server.Origin);
+                Logger.Write(LogLevel.Info,"Press enter to exit");
                 Console.ReadLine();
             }
         }

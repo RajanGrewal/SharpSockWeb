@@ -15,10 +15,11 @@ namespace SharpSockWeb.Lib
         private readonly string m_origin;
         private bool m_active;
         private bool m_disposed;
-
-        public bool Active => m_active;
-        public string Origin => m_origin;
+        
         public int Port => m_port;
+        public string Origin => m_origin;
+        public bool Active => m_active;
+        public bool Disposed => m_disposed;
 
         public event Action<WebSocket> OnClientConnected;
         public event Action<WebSocket, byte[]> OnClientDataReceived;
@@ -127,28 +128,24 @@ namespace SharpSockWeb.Lib
         {
             while (m_active)
             {
-                await Task.Delay(15 * 1000); //15 Seconds
+                await Task.Delay(1 * 1000 * 60); //1 Min
 
-                WebSocket[] clients;
-
-                lock (m_lock)
-                    clients = m_clients.ToArray();
+                var clients = ToArray();
 
                 foreach (var sock in clients)
                 {
                     if (sock.State == SocketState.Connecting)
                     {
-                        if ((DateTime.Now - sock.CreateTime).Seconds >= 10)
+                        if ((DateTime.Now - sock.CreateTime).Seconds >= 10) //Socket did not finish handshake in 10 seconds
                         {
-                            //Socket did not finish handshake in 10 seconds
                             sock.ForceClose();
                         }
                     }
                     else if (sock.State == SocketState.Open)
                     {
-                        if ((DateTime.Now - sock.PongPingTime).Seconds >= 30)
+                        if ((DateTime.Now - sock.PongPingTime).Seconds >= 30) //Send ping after 30 seconds
                         {
-                            //Send ping after 30 seconds
+                            
                             await sock.SendPingAsnyc();
                         }
                     }
@@ -169,6 +166,42 @@ namespace SharpSockWeb.Lib
                 foreach (var sock in m_clients)
                     if (sock.State == SocketState.Open)
                         yield return sock;
+        }
+
+        public async void SendCloseAllAsync()
+        {
+            var clients = ToArray();
+
+            foreach (var sock in clients)
+            {
+                await sock.SendCloseAsync();
+            }
+        }
+        public async void SendStringAllAsync(string message)
+        {
+            var clients = ToArray();
+
+            foreach (var sock in clients)
+            {
+                await sock.SendStringAsync(message);
+            }
+        }
+        public async void SendDataAllAsync(byte[] buffer)
+        {
+            var clients = ToArray();
+
+            foreach (var sock in clients)
+            {
+                await sock.SendDataAsync(buffer);
+            }
+        }
+
+        private IEnumerable<WebSocket> ToArray()
+        {
+            lock (m_lock)
+            {
+                return m_clients.ToArray();
+            }
         }
 
         private void ThrowIfDisposed()
