@@ -14,9 +14,9 @@ namespace SharpSockWeb.Lib
         private readonly TcpClient m_client;
         private readonly NetworkStream m_stream;
         private readonly string m_endPoint;
-        private SocketState m_state;
-        private DateTime m_createTime;
+        private readonly DateTime m_createTime;
         private DateTime m_pingPongTime;
+        private SocketState m_state;
         private bool m_requestClose;
 
         public string RemoteEndPoint => m_endPoint;
@@ -30,10 +30,10 @@ namespace SharpSockWeb.Lib
             m_client = client;
             m_stream = client.GetStream();
             m_endPoint = SetSockOpt(client);
-
-            m_state = SocketState.Connecting;
             m_createTime = DateTime.Now;
+
             m_pingPongTime = DateTime.Now;
+            m_state = SocketState.Connecting;
             m_requestClose = false;
         }
 
@@ -61,7 +61,7 @@ namespace SharpSockWeb.Lib
             while (true)
             {
                 var buf = await ReadBytesAsync(1);
-                string curRead = Encoding.UTF8.GetString(buf);
+                string curRead = Constant.GetString(buf);
 
                 if (curRead != "\r" && curRead != "\n")
                 {
@@ -191,7 +191,7 @@ namespace SharpSockWeb.Lib
         }
         internal async Task ReadMaskKey(Frame frame)
         {
-            ulong len = frame.Mask ? Constant.MaskKeySize : 0;
+            ulong len = frame.MaskLen;
             frame.MaskKey = await ReadBytesAsync(len);
         }
         internal async Task ReadPayload(Frame frame)
@@ -203,13 +203,13 @@ namespace SharpSockWeb.Lib
 
             var payLoad = await ReadBytesAsync(len);
 
-            if (frame.Mask)
+            if (frame.Mask && payLoad.Length > 0)
                 Crypto.DecryptPayload(payLoad, frame.MaskKey);
 
             switch (frame.OpCode)
             {
                 case OpCode.Text:
-                    var str = Encoding.UTF8.GetString(payLoad);
+                    var str = Constant.GetString(payLoad);
                     m_parent.ClientString(this, str);
                     break;
                 case OpCode.Binary:
@@ -231,36 +231,44 @@ namespace SharpSockWeb.Lib
             }
         }
 
-        public async Task SendStringAsync(string message)
+        public async Task<bool> SendStringAsync(string message)
         {
-            var buffer = Encoding.UTF8.GetBytes(message);
-            await SendFrameAsync(OpCode.Text, buffer);
+            var buffer = Constant.GetBytes(message);
+            return await SendFrameAsync(OpCode.Text, buffer);
         }
-        public async Task SendDataAsync(byte[] buffer)
+        public async Task<bool> SendDataAsync(byte[] buffer)
         {
-            await SendFrameAsync(OpCode.Binary, buffer);
+            return await SendFrameAsync(OpCode.Binary, buffer);
         }
-        public async Task SendPingAsnyc()
+        public async Task<bool> SendPingAsnyc()
         {
-            await SendFrameAsync(OpCode.Ping, new byte[0]);
+            return await SendFrameAsync(OpCode.Ping, new byte[0]);
         }
-        public async Task SendCloseAsync()
+        public async Task<bool> SendCloseAsync()
         {
-            var payLoad = Encoding.UTF8.GetBytes(Constant.CloseMessage);
-            m_requestClose = true;
-            await SendCloseAsync(payLoad);
+            if (m_state != SocketState.Closed && m_state != SocketState.Closing)
+            {
+                var payLoad = Constant.GetBytes(Constant.CloseMessage);
+                m_requestClose = true;
+                return await SendCloseAsync(payLoad);
+            }
+            return false;
         }
 
-        private async Task SendCloseAsync(byte[] payLoad)
+        private async Task<bool> SendCloseAsync(byte[] payLoad)
         {
-            await SendFrameAsync(OpCode.Close, payLoad);
-            m_state = SocketState.Closing;
+            bool ret = await SendFrameAsync(OpCode.Close, payLoad);
+
+            if(ret) //TODO: Confirm this
+                m_state = SocketState.Closing;
+
+            return ret;
         }
-        private async Task SendPongAsync(byte[] payLoad)
+        private async Task<bool> SendPongAsync(byte[] payLoad)
         {
-            await SendFrameAsync(OpCode.Pong, payLoad);
+            return await SendFrameAsync(OpCode.Pong, payLoad);
         }
-        private async Task SendFrameAsync(OpCode opCode, byte[] payLoadData)
+        private async Task<bool> SendFrameAsync(OpCode opCode, byte[] payLoadData)
         {
             if (payLoadData == null)
                 throw new ArgumentNullException(nameof(payLoadData));
@@ -307,17 +315,28 @@ namespace SharpSockWeb.Lib
             finData[0] = header1;
             finData[1] = header2;
 
-            await SendRawAsync(finData);
+            return await SendRawAsync(finData);
         }
-        private async Task SendRawAsync(string message)
+        private async Task<bool> SendRawAsync(string message)
         {
-            var buffer = Encoding.UTF8.GetBytes(message);
-            await SendRawAsync(buffer);
+            var buffer = Constant.GetBytes(message);
+            return await SendRawAsync(buffer);
         }
-        private async Task SendRawAsync(byte[] buffer)
+        private async Task<bool> SendRawAsync(byte[] buffer)
         {
-            if (m_state != SocketState.Closing && m_state != SocketState.Closed)
-                await m_stream.WriteAsync(buffer, 0, buffer.Length);
+            bool toReturn = true;
+            try
+            {
+                if (m_state == SocketState.Closing || m_state == SocketState.Closed)
+                    toReturn = false;
+                else
+                    await m_stream.WriteAsync(buffer, 0, buffer.Length);
+            }
+            catch (Exception)
+            {
+                toReturn = false;
+            }
+            return toReturn;
         }
 
         public void ForceClose()

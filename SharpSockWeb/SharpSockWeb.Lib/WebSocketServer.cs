@@ -93,7 +93,12 @@ namespace SharpSockWeb.Lib
                 bool httpSuccess = await sock.ReadHttpHeader();
 
                 if (!httpSuccess)
-                    return;
+                {
+                    sock.ForceClose();
+
+                    lock (m_lock)
+                        m_clients.Remove(sock);
+                }
 
                 while (tcp.Connected)
                 {
@@ -102,18 +107,16 @@ namespace SharpSockWeb.Lib
 
                     var frame = new Frame();
 
-                    await sock.ReadFrameHeader(frame);
+                    await sock.ReadFrameHeader(frame);.
                     await sock.ReadExtLen(frame);
                     await sock.ReadMaskKey(frame);
                     await sock.ReadPayload(frame);
                 }
             }
 #if DEBUG
-            catch (Exception e)
+            catch (Exception ex)
             {
-
-                throw;
-
+                
             }
 #endif
             finally
@@ -168,7 +171,7 @@ namespace SharpSockWeb.Lib
                         yield return sock;
         }
 
-        public async void SendCloseAllAsync()
+        public async void BroadcastCloseAsync()
         {
             var clients = ToArray();
 
@@ -177,7 +180,7 @@ namespace SharpSockWeb.Lib
                 await sock.SendCloseAsync();
             }
         }
-        public async void SendStringAllAsync(string message)
+        public async void BroadcastStringAsync(string message)
         {
             var clients = ToArray();
 
@@ -186,7 +189,7 @@ namespace SharpSockWeb.Lib
                 await sock.SendStringAsync(message);
             }
         }
-        public async void SendDataAllAsync(byte[] buffer)
+        public async void BoradcastDataAsync(byte[] buffer)
         {
             var clients = ToArray();
 

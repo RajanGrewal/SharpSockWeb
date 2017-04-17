@@ -1,4 +1,6 @@
-﻿namespace SharpSockWeb.Lib
+﻿using System.Text;
+
+namespace SharpSockWeb.Lib
 {
     internal static class Constant
     {
@@ -28,6 +30,15 @@
             "Connection: Upgrade\r\n" +
             "Sec-WebSocket-Accept: {0}\r\n" +
             "\r\n";
+        /**************************************************************************/
+        public static byte[] GetBytes(string message)
+        {
+            return Encoding.UTF8.GetBytes(message);
+        }
+        public static string GetString(byte[] bytes)
+        {
+            return Encoding.UTF8.GetString(bytes);
+        }
         /**************************************************************************/
     }
 }
