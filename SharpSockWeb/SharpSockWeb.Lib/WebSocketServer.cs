@@ -107,7 +107,7 @@ namespace SharpSockWeb.Lib
 
                     var frame = new Frame();
 
-                    await sock.ReadFrameHeader(frame);.
+                    await sock.ReadFrameHeader(frame);
                     await sock.ReadExtLen(frame);
                     await sock.ReadMaskKey(frame);
                     await sock.ReadPayload(frame);
@@ -116,7 +116,7 @@ namespace SharpSockWeb.Lib
 #if DEBUG
             catch (Exception ex)
             {
-                
+                System.Diagnostics.Debug.WriteLine(ex.ToString());
             }
 #endif
             finally
